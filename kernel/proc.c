@@ -33,7 +33,7 @@ struct spinlock wait_lock;
 int
 pause_system(int seconds){
   int prevState[NPROC];
-  uint ticks0 = seconds; // * 1,000,000?
+  uint ticks0 = seconds * 1000000; // * 1,000,000?
   if(seconds < 0)
     return -1;
 

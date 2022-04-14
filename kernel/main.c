@@ -42,8 +42,8 @@ void example_kill_system(int interval, int loop_size) {
 void
 main()
 {
-  //example_pause_system(1, 2, 5);
-  example_kill_system(5, 5);
+  example_pause_system(2, 2, 5);
+  //example_kill_system(5, 5);
 
   if(cpuid() == 0){
     consoleinit();
