@@ -8,7 +8,7 @@
 #include "proc.h"
 
 uint64
-sys_pause(void)
+sys_pause_system(void)
 {
   int n;
   if(argint(0, &n) < 0)
@@ -18,7 +18,7 @@ sys_pause(void)
 }
 
 uint64
-sys_killsystem(void)
+sys_kill_system(void)
 {
   return kill_system();
 }

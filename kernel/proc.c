@@ -33,7 +33,7 @@ struct spinlock wait_lock;
 int
 pause_system(int seconds){
   int prevState[NPROC];
-  uint ticks0 = seconds * 1000000; // * 1,000,000?
+  uint ticks0 = seconds * 10; // * 1,000,000?
   if(seconds < 0)
     return -1;
 
@@ -41,7 +41,7 @@ pause_system(int seconds){
   {
     prevState[i] = proc[i].state;
     acquire(&proc[i].lock);
-    if(proc[i].state == RUNNING)
+    if(proc[i].state == RUNNING && proc[i].pid > 2)
       proc[i].state = RUNNABLE;
     release(&proc[i].lock);
   }
@@ -50,6 +50,8 @@ pause_system(int seconds){
   acquire(&tickslock);
   sleep(&ticks0, &tickslock);
   release(&tickslock);
+
+  
 
   for (int i = 0; i < NPROC; i++){
     acquire(&proc[i].lock);
@@ -64,7 +66,7 @@ int
 kill_system(void){
   struct proc *p;
   for(p = proc; p < &proc[NPROC]; p++)
-    if(p != initproc && p->pid != 0) // init process and shell?
+    if(p->pid > 2) // init process and shell?
       kill(p->pid);
   
  return 0;
