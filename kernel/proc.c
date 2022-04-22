@@ -6,8 +6,12 @@
 #include "proc.h"
 #include "defs.h"
 
-
-
+int sleeping_processes_mean=0;
+int running_processes_mean=0;
+int running_time_mean=0;
+int changes=0;
+int rate=5;
+int program_time=0;
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -168,6 +172,9 @@ allocproc(void)
   return 0;
 
 found:
+  p->last_runnable_time=0;
+  p->mean_ticks=0;
+  p->last_ticks=0;
   p->pid = allocpid();
   p->state = USED;
 
@@ -485,17 +492,60 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-void
-scheduler(void)
-{
+int changeToMean(int exp,int mean){
+    return (((exp)+mean*changes)/(changes+1));
+}
+
+void SJFtScheduler(){
   struct proc *p;
   struct cpu *c = mycpu();
-  
+  struct proc* ChoosenOne =proc;
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
+    int minMeanTick=-1;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state==RUNNABLE){
+        if (minMeanTick==-1||p->mean_ticks<minMeanTick){
+            ChoosenOne=p;
+        }
+      }
+      release(&p->lock);
+    }
+        p=ChoosenOne;
+        acquire(&p->lock);
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        //stats staff
+        changes++;
+        sleeping_processes_mean =changeToMean((ticks - p->last_runnable_time),sleeping_processes_mean);
+        running_processes_mean =changeToMean(ticks-p->last_runnable_time,running_processes_mean);
+        uint64 CurrentTick=ticks;
+        swtch(&c->context, &p->context);
+        p->last_ticks = ticks-CurrentTick;
+        running_time_mean =changeToMean(p->last_ticks,running_time_mean);
+        p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
+        running_time_mean =changeToMean(p->last_ticks,running_time_mean);
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+        release(&p->lock);
+      }
+}
 
+
+void regulerScheduler(){
+  struct proc *p;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
@@ -504,8 +554,17 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
+        //stats staff
 
+
+        changes++;
+        sleeping_processes_mean =changeToMean((ticks - p->last_runnable_time),sleeping_processes_mean);
+        running_processes_mean =changeToMean(ticks-p->last_runnable_time,running_processes_mean);
+
+        uint64 CurrentTick=ticks;
+        swtch(&c->context, &p->context);
+        p->last_ticks = ticks-CurrentTick;
+        running_time_mean =changeToMean(p->last_ticks,running_time_mean);
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -514,6 +573,66 @@ scheduler(void)
     }
   }
 }
+
+void FCFSScheduler(){
+  struct proc *p;
+  struct cpu *c = mycpu();
+  struct proc* ChoosenOne =proc;
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    
+    int minRunnableTime=-1;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state==RUNNABLE){
+        if (minRunnableTime==-1||p->last_runnable_time<minRunnableTime){
+            minRunnableTime=p->last_runnable_time;
+            ChoosenOne=p;
+        } 
+      }
+      release(&p->lock);
+    }
+        p=ChoosenOne;
+        acquire(&p->lock);
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        //stats staff
+        changes++;
+        sleeping_processes_mean =changeToMean((ticks - p->last_runnable_time),sleeping_processes_mean);
+        running_processes_mean =changeToMean(ticks-p->last_runnable_time,running_processes_mean);
+        uint64 CurrentTick=ticks;
+        swtch(&c->context, &p->context);
+        p->last_ticks = ticks-CurrentTick;
+        running_time_mean =changeToMean(p->last_ticks,running_time_mean);
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&p->lock);
+    }
+
+void scheduler(void)
+{
+  for(;;){
+  #ifndef DEFAULT
+  regulerScheduler();
+  #endif
+
+  #ifndef FCFS
+  FCFSScheduler();
+  #endif
+
+  #ifndef SJF
+  SJFtScheduler();
+  #endif
+  }
+}
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores

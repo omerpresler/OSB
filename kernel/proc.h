@@ -1,4 +1,6 @@
 // Saved registers for kernel context switches.
+
+
 struct context {
   uint64 ra;
   uint64 sp;
@@ -85,7 +87,9 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // Per-process state
 struct proc {
   struct spinlock lock;
-
+  uint64 last_runnable_time;
+  uint64 mean_ticks;
+  uint64 last_ticks;
   // p->lock must be held when using these:
   enum procstate state;        // Process state
   void *chan;                  // If non-zero, sleeping on chan
