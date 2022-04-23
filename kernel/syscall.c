@@ -83,9 +83,8 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
-extern uint64 sys_kill_system(void);
+extern uint64 sys_kill_system(void); 
 extern uint64 sys_pause_system(void);
-
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
