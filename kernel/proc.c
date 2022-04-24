@@ -69,6 +69,7 @@ void stateChange(struct proc* p)
 
 void changeStateToRunnable(struct proc* p)
 {
+  stateChange(p);
   p->state = RUNNABLE;
   p->last_runnable_time = ticks;
 }
@@ -96,8 +97,18 @@ int kill_system(void)
 {
   struct proc *p;
   for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
     if (p->pid > 2) // init process and shell?
+    {
+      release(&p->lock);
       kill(p->pid);
+    }
+    else
+      release(&p->lock);
+  }
+    
+      
 
   return 0;
 }
@@ -213,6 +224,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  stateChange(p);
   p->state = USED;
   p->last_runnable_time = 0;
   p->mean_ticks = 0;
@@ -261,6 +273,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  stateChange(p);
   p->state = UNUSED;
 }
 
@@ -466,6 +479,7 @@ exit(int status)
   acquire(&p->lock);
 
   p->xstate = status;
+  stateChange(p);
   p->state = ZOMBIE;
 
   sleeping_processes_mean = (sleeping_processes_mean * sleeping_processes_count + p->sleeping_time) / (sleeping_processes_count+1);
@@ -540,7 +554,7 @@ void SJFScheduler()
         // Switch to chosen process.  It is the process's jobf
         // to release its lock and then reacquire it
         // before jumping back to us.
- 
+        stateChange(p);
         p->state = RUNNING;
         c->proc = p;
         // stats staff
@@ -611,6 +625,7 @@ void FCFSScheduler()
         // Switch to chosen process.  It is the process's jobf
         // to release its lock and then reacquire it
         // before jumping back to us.
+        stateChange(p);
         p->state = RUNNING;
         c->proc = p;
         // stats staff
@@ -699,6 +714,7 @@ void regulerScheduler()
           // Switch to chosen process.  It is the process's jobf
           // to release its lock and then reacquire it
           // before jumping back to us.
+          stateChange(p);
           p->state = RUNNING;
           c->proc = p;
           // stats staff
@@ -837,6 +853,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
 
+  stateChange(p);
   p->state = SLEEPING;
 
   sched();
