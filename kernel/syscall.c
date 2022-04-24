@@ -85,6 +85,7 @@ argstr(int n, char *buf, int max)
 
 extern uint64 sys_kill_system(void); 
 extern uint64 sys_pause_system(void);
+extern uint64 sys_print_stats(void);
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -131,7 +132,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_pause_system]   sys_pause_system,
-[SYS_kill_system]   sys_kill_system
+[SYS_kill_system]   sys_kill_system,
+[SYS_print_stats]   sys_print_stats
 };
 
 void

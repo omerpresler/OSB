@@ -38,7 +38,8 @@ void kill_system_dem(int interval, int loop_size) {
 int
 main(int argc, char *argv[])
 {
-    pause_system_dem(10, 10, 100);
+    pause_system_dem(10, 2, 100);
     kill_system_dem(10, 100);
+    print_stats();
     exit(0);
 }

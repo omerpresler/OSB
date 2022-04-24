@@ -19,8 +19,23 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
-int nextGoodTicks = 0;
 extern char trampoline[]; // trampoline.S
+
+int nextGoodTicks = 0;
+int rate = 5;
+
+int sleeping_processes_mean = 0;
+int runnable_time_mean = 0;
+int running_time_mean = 0;
+
+int sleeping_processes_count = 0;
+int runnable_time_count = 0;
+int running_time_count = 0;
+
+int program_time = 0;
+int cpu_utilization = 0;
+int start_time = 0;
+
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -30,21 +45,46 @@ struct spinlock wait_lock;
 
 //******************OSB***********************
 
+void stateChange(struct proc* p)
+{
+  switch (p->state)
+  {
+  case SLEEPING:
+    p->sleeping_time += ticks - p->last_time_changed;
+    break;
+
+  case RUNNABLE:
+    p->runnable_time += ticks - p->last_time_changed;
+    break;
+
+  case RUNNING:
+    p->running_time += ticks - p->last_time_changed;
+    break;
+  
+  default:
+    break;
+  }
+  p->last_time_changed = ticks;
+}
+
+void changeStateToRunnable(struct proc* p)
+{
+  p->state = RUNNABLE;
+  p->last_runnable_time = ticks;
+}
+
 int pause_system(int seconds)
 {
-  // nextGoodTicks is a global svaer for the next runnable tick
-  int StartingTicks = ticks;
+  // nextGoodTicks is a global var for the next runnable tick
   struct proc *p;
-  nextGoodTicks = StartingTicks + 10 * seconds;
-  if (seconds < 0)
-    return -1;
+  nextGoodTicks = ticks + 10 * seconds;
 
   for (p = proc; p < &proc[NPROC]; p++)
   {
     acquire(&p->lock);
-    if (p->state == RUNNABLE && p->pid > 2)
+    if (p->state == RUNNING && p->pid > 2)
     {
-      p->state = RUNNABLE;
+      changeStateToRunnable(p);
     }
     release(&p->lock);
   }
@@ -58,6 +98,17 @@ int kill_system(void)
   for (p = proc; p < &proc[NPROC]; p++)
     if (p->pid > 2) // init process and shell?
       kill(p->pid);
+
+  return 0;
+}
+
+int print_stats(void)
+{
+  printf("sleeping_processes_mean: %d\n", sleeping_processes_mean);
+  printf("runnable_time_mean: %d\n", runnable_time_mean);
+  printf("running_time_count: %d\n", running_time_count);
+  printf("program_time: %d\n", program_time);
+  printf("cpu_utilization: %d\n", cpu_utilization);
 
   return 0;
 }
@@ -89,6 +140,8 @@ void
 procinit(void)
 {
   struct proc *p;
+  cpu_utilization = ticks;
+  start_time = ticks;
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
@@ -161,6 +214,9 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->last_runnable_time = 0;
+  p->mean_ticks = 0;
+  p->last_ticks = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -283,8 +339,7 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-
-  p->state = RUNNABLE;
+  changeStateToRunnable(p);
 
   release(&p->lock);
 }
@@ -354,7 +409,7 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
-  np->state = RUNNABLE;
+  changeStateToRunnable(np);
   release(&np->lock);
 
   return pid;
@@ -413,23 +468,162 @@ exit(int status)
   p->xstate = status;
   p->state = ZOMBIE;
 
+  sleeping_processes_mean = (sleeping_processes_mean * sleeping_processes_count + p->sleeping_time) / (sleeping_processes_count+1);
+  runnable_time_mean = (runnable_time_mean * runnable_time_count + p->runnable_time) / (runnable_time_count+1);
+  running_time_mean = (running_time_mean * running_time_count + p->running_time) / (running_time_count+1);
+
+  sleeping_processes_count++;
+  runnable_time_count++;
+  running_time_count++;
+
+  program_time += p->running_time;
+  cpu_utilization = program_time / (ticks - start_time);
+
   release(&wait_lock);
 
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
 }
-void SJFtScheduler()
+
+struct proc* minMeanTicks()
 {
-  
+  struct proc *p;
+  struct proc *min;
+  min = proc;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE)
+    {
+      min = p;
+      release(&p->lock);
+      break;
+    }
+    release(&p->lock);
+  }
+
+  acquire(&min->lock);
+  if(min->state == RUNNABLE)
+  {
+    for (p = min+1; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && min->mean_ticks > p->mean_ticks)
+      {
+        release(&min->lock);
+        min = p;
+      }
+      else
+        release(&p->lock);
+    }
+  }
+  return min;
 }
 
+void SJFScheduler()
+{
+  
+  struct proc *p;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  uint prevTicks = 0;
+  for (;;)
+  {
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    p = minMeanTicks();
+    if (ticks >= nextGoodTicks)
+    {
+      if (p->state == RUNNABLE)
+      {
+        // Switch to chosen process.  It is the process's jobf
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+ 
+        p->state = RUNNING;
+        c->proc = p;
+        // stats staff
+        prevTicks = ticks;
+        swtch(&c->context, &p->context);
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+        p->last_ticks = ticks - prevTicks;
+        p->mean_ticks =  ((10 - rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
+      }
+    }
+    release(&p->lock);
+    
+  }
+}
 
+struct proc* minLastRunnableTime()
+{
+  struct proc *p;
+  struct proc *min;
+  min = proc;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if(p->state == RUNNABLE)
+    {
+      min = p;
+      release(&p->lock);
+      break;
+    }
+    release(&p->lock);
+  }
+
+  acquire(&min->lock);
+  if(min->state == RUNNABLE)
+  {
+    for (p = min+1; p < &proc[NPROC]; p++)
+    {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && min->last_runnable_time > p->last_runnable_time)
+      {
+        release(&min->lock);
+        min = p;
+      }
+      else
+        release(&p->lock);
+    }
+  }
+  return min;
+}
 
 void FCFSScheduler()
 {
-  
-  }
+  struct proc *p;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for (;;)
+  {
+    
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    p = minLastRunnableTime();
+    if (ticks >= nextGoodTicks)
+    {
+      if (p->state == RUNNABLE)
+      {
+        // Switch to chosen process.  It is the process's jobf
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        // stats staff
+        swtch(&c->context, &p->context);
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+    }
+    release(&p->lock);
+  } 
+}
+
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
@@ -497,7 +691,7 @@ void regulerScheduler()
     intr_on();
     for (p = proc; p < &proc[NPROC]; p++)
     {
-      if (ticks > nextGoodTicks)
+      if (ticks >= nextGoodTicks)
       {
         acquire(&p->lock);
         if (p->state == RUNNABLE)
@@ -530,7 +724,7 @@ void scheduler(void)
     FCFSScheduler();
 
 #elif SJF
-    SJFtScheduler();
+    SJFScheduler();
 #endif
   }
 }
@@ -597,7 +791,7 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  p->state = RUNNABLE;
+  changeStateToRunnable(p);
   sched();
   release(&p->lock);
 }
@@ -642,6 +836,7 @@ sleep(void *chan, struct spinlock *lk)
 
   // Go to sleep.
   p->chan = chan;
+
   p->state = SLEEPING;
 
   sched();
@@ -665,7 +860,7 @@ wakeup(void *chan)
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
-        p->state = RUNNABLE;
+        changeStateToRunnable(p);
       }
       release(&p->lock);
     }
@@ -686,7 +881,7 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->state = RUNNABLE;
+        changeStateToRunnable(p);
       }
       release(&p->lock);
       return 0;

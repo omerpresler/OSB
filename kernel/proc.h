@@ -96,6 +96,18 @@ struct proc {
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
+  int mean_ticks;
+  int last_ticks;
+  int last_runnable_time;
+  
+  int last_time_changed;
+
+  int sleeping_time;
+  int runnable_time;
+  int running_time;
+
+
+
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
