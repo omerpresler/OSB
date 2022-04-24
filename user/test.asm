@@ -300,14 +300,12 @@ main(int argc, char *argv[])
  226:	e406                	sd	ra,8(sp)
  228:	e022                	sd	s0,0(sp)
  22a:	0800                	addi	s0,sp,16
-    //kill_system_dem(10, 100);
-    //pause_system_dem(10, 2, 100);
-    env_freq();
+    env_large();
  22c:	00000097          	auipc	ra,0x0
- 230:	fd4080e7          	jalr	-44(ra) # 200 <env_freq>
-    print_stats();
+ 230:	faa080e7          	jalr	-86(ra) # 1d6 <env_large>
+    env_freq();
  234:	00000097          	auipc	ra,0x0
- 238:	338080e7          	jalr	824(ra) # 56c <print_stats>
+ 238:	fcc080e7          	jalr	-52(ra) # 200 <env_freq>
     exit(0);
  23c:	4501                	li	a0,0
  23e:	00000097          	auipc	ra,0x0

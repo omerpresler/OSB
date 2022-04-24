@@ -24,13 +24,11 @@ extern char trampoline[]; // trampoline.S
 int nextGoodTicks = 0;
 int rate = 5;
 
-int sleeping_processes_mean = 0;
-int runnable_time_mean = 0;
-int running_time_mean = 0;
+int sleeping_processes_total = 0;
+int runnable_time_total = 0;
+int running_time_total = 0;
 
-int sleeping_processes_count = 0;
-int runnable_time_count = 0;
-int running_time_count = 0;
+int processes_count = 0; 
 
 int program_time = 0;
 int cpu_utilization = 0;
@@ -47,6 +45,7 @@ struct spinlock wait_lock;
 
 void stateChange(struct proc* p)
 {
+  
   switch (p->state)
   {
   case SLEEPING:
@@ -115,11 +114,11 @@ int kill_system(void)
 
 int print_stats(void)
 {
-  printf("sleeping_processes_mean: %d\n", sleeping_processes_mean);
-  printf("runnable_time_mean: %d\n", runnable_time_mean);
-  printf("running_time_count: %d\n", running_time_count);
+  printf("sleeping_processes_mean: %d\n", (sleeping_processes_total / processes_count));
+  printf("runnable_time_mean: %d\n", (runnable_time_total / processes_count));
+  printf("running_time_mean: %d\n", (running_time_total / processes_count));
   printf("program_time: %d\n", program_time);
-  printf("cpu_utilization: %d\n", cpu_utilization);
+  printf("cpu_utilization: %d%%\n", cpu_utilization);
 
   return 0;
 }
@@ -482,16 +481,16 @@ exit(int status)
   stateChange(p);
   p->state = ZOMBIE;
 
-  sleeping_processes_mean = (sleeping_processes_mean * sleeping_processes_count + p->sleeping_time) / (sleeping_processes_count+1);
-  runnable_time_mean = (runnable_time_mean * runnable_time_count + p->runnable_time) / (runnable_time_count+1);
-  running_time_mean = (running_time_mean * running_time_count + p->running_time) / (running_time_count+1);
+  sleeping_processes_total += p->sleeping_time;
+  runnable_time_total += p->runnable_time;
+  running_time_total += p->running_time;
 
-  sleeping_processes_count++;
-  runnable_time_count++;
-  running_time_count++;
+ 
+
+  processes_count++;
 
   program_time += p->running_time;
-  cpu_utilization = program_time / (ticks - start_time);
+  cpu_utilization = program_time * 100 / (ticks - start_time);
 
   release(&wait_lock);
 
