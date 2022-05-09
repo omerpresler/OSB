@@ -25,7 +25,7 @@ extern char trampoline[]; // trampoline.S
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
-
+extern uint64 cas(volatile void*addr,int expected,int newval);
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -84,16 +84,13 @@ myproc(void) {
   pop_off();
   return p;
 }
-
+//lock 0 if locked and 1 if open cas() if pid_lock==1 cs wait
 int
 allocpid() {
-  int pid;
-  
-  acquire(&pid_lock);
-  pid = nextpid;
-  nextpid = nextpid + 1;
-  release(&pid_lock);
-
+ int pid;
+ do{
+   pid=nextpid;
+ }while(cas(&nextpid,pid,pid+1));
   return pid;
 }
 
