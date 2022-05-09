@@ -6,45 +6,10 @@
 
 volatile static int started = 0;
 
-void example_pause_system(int interval, int pause_seconds, int loop_size) {
-    int n_forks = 2;
-    for (int i = 0; i < n_forks; i++) {
-    	fork();
-    }
-    for (int i = 0; i < loop_size; i++) {
-        if (i % interval == 0) {
-            printf("pause system %d/%d completed.\n", i, loop_size);
-        }
-        if (i == loop_size / 2){
-            pause_system(pause_seconds);
-        }
-    }
-    printf("\n");
-}
-
-void example_kill_system(int interval, int loop_size) {
-    int n_forks = 2;
-    for (int i = 0; i < n_forks; i++) {
-    	fork();
-    }
-    for (int i = 0; i < loop_size; i++) {
-        if (i % interval == 0) {
-            printf("kill system %d/%d completed.\n", i, loop_size);
-        }
-        if (i == loop_size / 2){
-            kill_system();
-        }
-    }
-    printf("\n");
-}
-
 // start() jumps here in supervisor mode on all CPUs.
 void
 main()
 {
-  //example_pause_system(2, 2, 5);
-  //example_kill_system(5, 5);
-
   if(cpuid() == 0){
     consoleinit();
     printfinit();
@@ -66,7 +31,6 @@ main()
     userinit();      // first user process
     __sync_synchronize();
     started = 1;
-    
   } else {
     while(started == 0)
       ;
@@ -77,5 +41,5 @@ main()
     plicinithart();   // ask PLIC for device interrupts
   }
 
-  scheduler();    
+  scheduler();        
 }
