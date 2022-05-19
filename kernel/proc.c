@@ -7,15 +7,16 @@
 #include "defs.h"
 
 
-int firstUnused;
-int lastunused;
+typedef struct list{
+struct spinlock lock;
+int first;
+int last;
+}list;
 
-int firstZombie;
-int lastZombie;
-
-int firstSleeping;
-int lastSleeping;
-
+list unusedList;
+list zombieList;
+list sleepingList;
+int numOfCpus;
 
 struct cpu cpus[NCPU];
 
@@ -50,7 +51,11 @@ int getcpu( )
 }
 
 
-void add_proc_to_list(int indexToAdd,int* indexOfLast){
+void add_proc_to_list(int indexToAdd,int* indexOfLast,int* indexOfFirst,struct spinlock* ){
+  //list is empty
+  if(indexOfLast==-1){
+    
+  }
   acquire(&proc[indexToAdd].stateLock);
   acquire(&proc[*indexOfLast].stateLock);
 
@@ -65,45 +70,53 @@ void add_proc_to_list(int indexToAdd,int* indexOfLast){
   release(&proc[*indexOfLast].stateLock);
 }
 
-void remove_proc_from_list(int indexToRemove, int* indexOfFirst){
-  acquire(&proc[*indexOfFirst].stateLock);
-  struct proc* p=&proc[*indexOfFirst];
-  int prev = -1;
-  int curr = -1;
-  int next = -1;
+void remove_proc_from_list(list* l,int indexInProc){
 
-  if(*indexOfFirst == indexToRemove)
+  int prev=-1;
+  int curr=-1;
+  int next=-1;
+  acquire(&l->lock);
+  //list size = 0
+  if(l->first==-1)
   {
-    int first = *indexOfFirst;
-    *indexOfFirst = proc[*indexOfFirst].next_index_in_list;
-    release(&proc[first].stateLock);
+  panic("trying to delete from an empty list");
   }
-  else
-  {
-    prev =  *indexOfFirst;
-    curr = proc[*indexOfFirst].next_index_in_list;
-    acquire(&proc[curr].stateLock);
-    next = proc[curr].next_index_in_list;
-    
 
-    while(curr != indexToRemove)
-    {
+  //list size if 1
+  if(l->first=indexInProc){
+      acquire(&proc[l->first].stateLock);
+      l->first=proc[indexInProc].next_index_in_list;
+      if(l->last==indexInProc)
+        l->last=-1;
+      release(&proc[l->first].stateLock);    
+      return;
+  }
+
+  //list size >2
+  prev=l->first;
+  acquire(&proc[prev].stateLock);
+  release(&l->lock);
+  curr=proc[l->first].next_index_in_list;
+  acquire(&proc[curr].stateLock);
+  next=proc[curr].next_index_in_list;
+
+  while(indexInProc!=curr){
       release(&proc[prev].stateLock);
-      acquire(&proc[next].stateLock);
-
-      prev = curr;
-      curr = next;
-      next = &proc[next].next_index_in_list;
+      prev=curr;
+      curr=next;
+      acquire(&proc[proc[next].next_index_in_list].stateLock);
+      next=proc[next].next_index_in_list;
+      if (curr==-1)
+    {
+      panic("end of list");
     }
-
-    proc[prev].next_index_in_list = proc[curr].next_index_in_list;
-
-    release(prev);
-    release(curr);
   }
-
+  //curr = to remove
+  if(l->last==curr){
+    l->last=prev;
+  }
+  proc[prev].next_index_in_list=next;
 }
-
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -120,11 +133,32 @@ proc_mapstacks(pagetable_t kpgtbl) {
   }
 }
 
+void initlists(){
+  unusedList.first=-1;
+  unusedList.last=-1;
+  initlock(&unusedList.lock,"unused list lock");
 
+  zombieList.first=-1;
+  zombieList.last=-1;
+  initlock(&zombieList.lock,"zombie list lock");
+
+  sleepingList.first=-1;
+  sleepingList.last=-1;
+  initlock(&sleepingList.lock,"sleeping list lock");
+
+
+  for(int i=0;i<numOfCpus;i++){
+    cpus[i].runnable.first=-1;
+    cpus[i].runnable.last=-1;
+     initlock(&cpus[i].runnable.lock,"cpu lock");
+  }
+
+}
 // initialize the proc table at boot time.
 void
 procinit(void)
 {
+  initlists();
   struct proc *p;
   int index=0;
   initlock(&pid_lock, "nextpid");
@@ -190,8 +224,9 @@ allocproc(void)
     acquire(&p->lock);
     if(p->state == UNUSED) {
       //q4 where and how we add p to the runnable list of the cpu
+
       remove_proc_from_list(p->index_in_proc,&firstUnused);
-      add_proc_to_list(p->index_in_proc,& (cpus[p->cpu_num].lastRunnable));
+    
       goto found;
     } else {
       release(&p->lock);
@@ -237,8 +272,6 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
-  remove_proc_from_list(p->index_in_proc,&firstZombie);
-  add_proc_to_list(p->index_in_proc,&lastunused);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -248,6 +281,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  remove_proc_from_list(p->index_in_proc,&firstZombie);
+  add_proc_to_list(p->index_in_proc,&lastunused);
 }
 
 // Create a user page table for a given process,
@@ -397,6 +433,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+
   np->cpu_num = p->cpu_num;
   add_proc_to_list(np->index_in_proc, &(mycpu()->lastRunnable));
   release(&np->lock);
@@ -457,8 +494,9 @@ exit(int status)
   p->xstate = status;
   p->state = ZOMBIE;
   //q1-who is removing the proc from runnbale
-  remove_proc_from_list(myproc()->index_in_proc,mycpu()->firstRunnable);
+  //q4 where and how we add p to the runnable list of the cpu
   add_proc_to_list(myproc()->index_in_proc,lastZombie);
+
   release(&wait_lock);
 
   // Jump into the scheduler, never to return.
@@ -629,12 +667,12 @@ sleep(void *chan, struct spinlock *lk)
   // so it's okay to release lk.
 
   acquire(&p->lock);  //DOC: sleeplock1
+  add_proc_to_list(myproc()->index_in_proc,&lastSleeping);
   release(lk);
 
   // Go to sleep.
+  
 
-  //q2 who is getting the process the goes to sleap out of is list
-  add_proc_to_list(myproc()->index_in_proc,&lastSleeping);
 
   p->chan = chan;
   p->state = SLEEPING;
@@ -684,7 +722,9 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
-      }
+        remove_proc_from_list(p->index_in_proc,&firstSleeping);
+        add_proc_to_list(p->index_in_proc,&(cpus[p->cpu_num].lastRunnable));
+              }
       release(&p->lock);
       return 0;
     }
