@@ -82,6 +82,8 @@ void            panic(char*) __attribute__((noreturn));
 void            printfinit(void);
 
 // proc.c
+int             setcpu(int cpuNum);
+int             getcpu();
 int             cpuid(void);
 void            exit(int);
 int             fork(void);

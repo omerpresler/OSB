@@ -13,7 +13,7 @@ int lastunused;
 int firstZombie;
 int lastZombie;
 
-int firstSleeaping;
+int firstSleeping;
 int lastSleeping;
 
 
@@ -38,29 +38,70 @@ extern char trampoline[]; // trampoline.S
 struct spinlock wait_lock;
 extern uint64 cas(volatile void*addr,int expected,int newval);
 
+int setcpu(int cpuNum)
+{
+  myproc()->cpu_num = cpuNum;
+  return cpuNum;
+}
 
-void add_proc_to_list(int indexToAdd,int indexOfLast){
+int getcpu( )
+{
+  return myproc()->cpu_num;
+}
+
+
+void add_proc_to_list(int indexToAdd,int* indexOfLast){
   acquire(&proc[indexToAdd].stateLock);
-  acquire(&proc[indexOfLast].stateLock);
+  acquire(&proc[*indexOfLast].stateLock);
 
-  struct proc* last=&proc[indexOfLast];
+  struct proc* last=&proc[*indexOfLast];
   struct proc* toAdd=&proc[indexToAdd];
+
+  *indexOfLast = toAdd->index_in_proc;
   last->next_index_in_list=indexToAdd;
   toAdd->next_index_in_list=-1;
 
   release(&proc[indexToAdd].stateLock);
-  release(&proc[indexOfLast].stateLock);
-
+  release(&proc[*indexOfLast].stateLock);
 }
 
-void remove_proc_from_list(int indexToRemove, int indexOfFirst){
-  acquire(&proc[indexToRemove].stateLock);
-  acquire(&proc[indexOfFirst].stateLock);
-  struct proc* p=&proc[indexOfFirst];
-  while(p->next_index_in_list!=indexToRemove && p->next_index_in_list!=-1)
-    p=&proc[p->next_index_in_list];
+void remove_proc_from_list(int indexToRemove, int* indexOfFirst){
+  acquire(&proc[*indexOfFirst].stateLock);
+  struct proc* p=&proc[*indexOfFirst];
+  int prev = -1;
+  int curr = -1;
+  int next = -1;
 
-  p->next_index_in_list=proc[p->next_index_in_list].next_index_in_list;
+  if(*indexOfFirst == indexToRemove)
+  {
+    int first = *indexOfFirst;
+    *indexOfFirst = proc[*indexOfFirst].next_index_in_list;
+    release(&proc[first].stateLock);
+  }
+  else
+  {
+    prev =  *indexOfFirst;
+    curr = proc[*indexOfFirst].next_index_in_list;
+    acquire(&proc[curr].stateLock);
+    next = proc[curr].next_index_in_list;
+    
+
+    while(curr != indexToRemove)
+    {
+      release(&proc[prev].stateLock);
+      acquire(&proc[next].stateLock);
+
+      prev = curr;
+      curr = next;
+      next = &proc[next].next_index_in_list;
+    }
+
+    proc[prev].next_index_in_list = proc[curr].next_index_in_list;
+
+    release(prev);
+    release(curr);
+  }
+
 }
 
 // Allocate a page for each process's kernel stack.
@@ -348,6 +389,8 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  np->cpu_num = p->cpu_num;
+  add_proc_to_list(np->index_in_proc, &(mycpu()->lastRunnable));
   release(&np->lock);
 
   return pid;
@@ -479,23 +522,20 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
-    }
+    p = mycpu()->firstRunnable;
+    acquire(&p->lock);
+    // Switch to chosen process.  It is the process's job
+    // to release its lock and then reacquire it
+    // before jumping back to us.
+    p->state = RUNNING;
+    c->proc = p;
+    remove_proc_from_list(p->index_in_proc, &mycpu()->firstRunnable);
+    swtch(&c->context, &p->context);
+    add_proc_to_list(p->index_in_proc, &mycpu()->lastRunnable);
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+    release(&p->lock);
   }
 }
 
