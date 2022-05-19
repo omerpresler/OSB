@@ -6,6 +6,17 @@
 #include "proc.h"
 #include "defs.h"
 
+
+int firstUnused;
+int lastunused;
+
+int firstZombie;
+int lastZombie;
+
+int firstSleeaping;
+int lastSleeping;
+
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -26,6 +37,32 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 extern uint64 cas(volatile void*addr,int expected,int newval);
+
+
+void add_proc_to_list(int indexToAdd,int indexOfLast){
+  acquire(&proc[indexToAdd].stateLock);
+  acquire(&proc[indexOfLast].stateLock);
+
+  struct proc* last=&proc[indexOfLast];
+  struct proc* toAdd=&proc[indexToAdd];
+  last->next_index_in_list=indexToAdd;
+  toAdd->next_index_in_list=-1;
+
+  release(&proc[indexToAdd].stateLock);
+  release(&proc[indexOfLast].stateLock);
+
+}
+
+void remove_proc_from_list(int indexToRemove, int indexOfFirst){
+  acquire(&proc[indexToRemove].stateLock);
+  acquire(&proc[indexOfFirst].stateLock);
+  struct proc* p=&proc[indexOfFirst];
+  while(p->next_index_in_list!=indexToRemove && p->next_index_in_list!=-1)
+    p=&proc[p->next_index_in_list];
+
+  p->next_index_in_list=proc[p->next_index_in_list].next_index_in_list;
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -41,6 +78,7 @@ proc_mapstacks(pagetable_t kpgtbl) {
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
 }
+
 
 // initialize the proc table at boot time.
 void
