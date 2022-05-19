@@ -126,12 +126,16 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+  int index=0;
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
+      //q3 is this the correct place to init the inedx_in_proc var and if this the right way
+      p->index_in_proc=index;
+      add_proc_to_list(index,&lastunused);
+      index++;
   }
 }
 
@@ -185,6 +189,9 @@ allocproc(void)
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
+      //q4 where and how we add p to the runnable list of the cpu
+      remove_proc_from_list(p->index_in_proc,&firstUnused);
+      add_proc_to_list(p->index_in_proc,& (cpus[p->cpu_num].lastRunnable));
       goto found;
     } else {
       release(&p->lock);
@@ -195,7 +202,6 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -231,6 +237,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  remove_proc_from_list(p->index_in_proc,&firstZombie);
+  add_proc_to_list(p->index_in_proc,&lastunused);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -319,7 +327,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
+  add_proc_to_list(p->index_in_proc,cpus[0].lastRunnable);
   release(&p->lock);
 }
 
@@ -448,7 +456,9 @@ exit(int status)
 
   p->xstate = status;
   p->state = ZOMBIE;
-
+  //q1-who is removing the proc from runnbale
+  remove_proc_from_list(myproc()->index_in_proc,mycpu()->firstRunnable);
+  add_proc_to_list(myproc()->index_in_proc,lastZombie);
   release(&wait_lock);
 
   // Jump into the scheduler, never to return.
@@ -566,6 +576,10 @@ sched(void)
   mycpu()->intena = intena;
 }
 
+
+//q6 regrding the last thing in 3.1.4 who is adding the zombie
+
+
 // Give up the CPU for one scheduling round.
 void
 yield(void)
@@ -573,6 +587,8 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  //q5 is this the place to add p the runnable list
+  add_proc_to_list(p->index_in_proc,&(cpus[p->cpu_num].lastRunnable));
   sched();
   release(&p->lock);
 }
@@ -616,9 +632,13 @@ sleep(void *chan, struct spinlock *lk)
   release(lk);
 
   // Go to sleep.
+
+  //q2 who is getting the process the goes to sleap out of is list
+  add_proc_to_list(myproc()->index_in_proc,&lastSleeping);
+
   p->chan = chan;
   p->state = SLEEPING;
-
+  
   sched();
 
   // Tidy up.
@@ -641,6 +661,8 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        remove_proc_from_list(p->index_in_proc,&firstSleeping);
+        add_proc_to_list(p->index_in_proc,cpus[p->cpu_num].lastRunnable);
       }
       release(&p->lock);
     }
