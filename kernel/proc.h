@@ -18,6 +18,13 @@ struct context {
   uint64 s11;
 };
 
+
+typedef struct list{
+struct spinlock lock;
+int first;
+int last;
+}list;
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.

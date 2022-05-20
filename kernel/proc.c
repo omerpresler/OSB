@@ -6,13 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-
-typedef struct list{
-struct spinlock lock;
-int first;
-int last;
-}list;
-
 list unusedList;
 list zombieList;
 list sleepingList;
@@ -51,23 +44,36 @@ int getcpu( )
 }
 
 
-void add_proc_to_list(int indexToAdd,int* indexOfLast,int* indexOfFirst,struct spinlock* ){
-  //list is empty
-  if(indexOfLast==-1){
-    
+void add_proc_to_list(list* l,int indexInProc){
+  acquire(&l->lock);
+  //list size = 0
+  if(l->first==-1)
+  {
+    acquire(&proc[indexInProc].stateLock);
+    struct proc* toAdd=&proc[indexInProc];
+
+    l->first = indexInProc;
+    l->last = indexInProc;
+    toAdd->next_index_in_list = -1;
+
+    release(&proc[indexInProc].stateLock);
   }
-  acquire(&proc[indexToAdd].stateLock);
-  acquire(&proc[*indexOfLast].stateLock);
+  else
+  {
+    acquire(&proc[l->last].stateLock);
+    acquire(&proc[indexInProc].stateLock);
 
-  struct proc* last=&proc[*indexOfLast];
-  struct proc* toAdd=&proc[indexToAdd];
+    struct proc* last=&proc[l->last];
+    struct proc* toAdd=&proc[indexInProc];
 
-  *indexOfLast = toAdd->index_in_proc;
-  last->next_index_in_list=indexToAdd;
-  toAdd->next_index_in_list=-1;
+    last->next_index_in_list = indexInProc;
+    toAdd->next_index_in_list = -1;
+    l->last = toAdd->index_in_proc;
 
-  release(&proc[indexToAdd].stateLock);
-  release(&proc[*indexOfLast].stateLock);
+    release(&last->stateLock);
+    release(&proc[indexInProc].stateLock);
+  }
+  release(&l->lock);
 }
 
 void remove_proc_from_list(list* l,int indexInProc){
@@ -76,46 +82,65 @@ void remove_proc_from_list(list* l,int indexInProc){
   int curr=-1;
   int next=-1;
   acquire(&l->lock);
+
   //list size = 0
   if(l->first==-1)
   {
-  panic("trying to delete from an empty list");
+    release(&l->lock);
+    panic("trying to delete from an empty list");
   }
 
-  //list size if 1
-  if(l->first=indexInProc){
-      acquire(&proc[l->first].stateLock);
-      l->first=proc[indexInProc].next_index_in_list;
-      if(l->last==indexInProc)
-        l->last=-1;
-      release(&proc[l->first].stateLock);    
-      return;
-  }
-
-  //list size >2
-  prev=l->first;
-  acquire(&proc[prev].stateLock);
-  release(&l->lock);
-  curr=proc[l->first].next_index_in_list;
-  acquire(&proc[curr].stateLock);
-  next=proc[curr].next_index_in_list;
-
-  while(indexInProc!=curr){
-      release(&proc[prev].stateLock);
-      prev=curr;
-      curr=next;
-      acquire(&proc[proc[next].next_index_in_list].stateLock);
-      next=proc[next].next_index_in_list;
-      if (curr==-1)
+  else if(l->first == l->last)// if the size of list = 1
+  {
+    if(l->first == indexInProc)//if the only element is the index to remove
     {
-      panic("end of list");
+      l->first = -1;
+      l->last = -1;
+      proc[indexInProc].next_index_in_list = -1;
+      release(&l->lock);
+    }
+    else
+    {
+      release(&l->lock);
+      panic("The element does't exist in this list");
     }
   }
-  //curr = to remove
-  if(l->last==curr){
-    l->last=prev;
+
+  else if(l->first == indexInProc)//trying to remove the first var when the size is bigger then 1
+  {
+    acquire(&proc[indexInProc].stateLock);
+    l->first = proc[indexInProc].next_index_in_list;
+    proc[indexInProc].next_index_in_list = -1;
+    release(&proc[indexInProc].stateLock);
+    release(&l->lock);
   }
-  proc[prev].next_index_in_list=next;
+
+  else// the list have at least two elements
+  {
+    prev=l->first;
+    acquire(&proc[prev].stateLock);
+    curr=proc[prev].next_index_in_list;
+    acquire(&proc[curr].stateLock);
+    next=proc[curr].next_index_in_list;
+
+    while(indexInProc!=curr){
+      release(&proc[prev].stateLock);
+      acquire(&proc[next].stateLock);
+
+      prev = curr;
+      curr = next;
+      next = proc[next].next_index_in_list;
+
+      if(curr == -1)
+        panic("The element does't exist in this list");
+    }
+    
+    proc[prev].next_index_in_list = next;
+    proc[indexInProc].next_index_in_list = -1;
+    release(&proc[prev].stateLock);
+    release(&proc[curr].stateLock);
+    release(&l->lock);
+  }
 }
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -150,7 +175,7 @@ void initlists(){
   for(int i=0;i<numOfCpus;i++){
     cpus[i].runnable.first=-1;
     cpus[i].runnable.last=-1;
-     initlock(&cpus[i].runnable.lock,"cpu lock");
+    initlock(&cpus[i].runnable.lock,"cpu lock");
   }
 
 }
@@ -168,7 +193,7 @@ procinit(void)
       p->kstack = KSTACK((int) (p - proc));
       //q3 is this the correct place to init the inedx_in_proc var and if this the right way
       p->index_in_proc=index;
-      add_proc_to_list(index,&lastunused);
+      add_proc_to_list(&unusedList, index);
       index++;
   }
 }
@@ -201,6 +226,7 @@ myproc(void) {
   pop_off();
   return p;
 }
+
 //lock 0 if locked and 1 if open cas() if pid_lock==1 cs wait
 int
 allocpid() {
@@ -219,18 +245,13 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
-  for(p = proc; p < &proc[NPROC]; p++) {
+  if(unusedList.first != -1) {
+    //q4 where and how we add p to the runnable list of the cpu
+    p = &proc[unusedList.first];
     acquire(&p->lock);
-    if(p->state == UNUSED) {
-      //q4 where and how we add p to the runnable list of the cpu
-
-      remove_proc_from_list(p->index_in_proc,&firstUnused);
-    
-      goto found;
-    } else {
-      release(&p->lock);
-    }
+    remove_proc_from_list(&unusedList, p->index_in_proc);
+  
+    goto found;
   }
   return 0;
 
@@ -282,8 +303,8 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 
-  remove_proc_from_list(p->index_in_proc,&firstZombie);
-  add_proc_to_list(p->index_in_proc,&lastunused);
+  remove_proc_from_list(&zombieList, p->index_in_proc);
+  add_proc_to_list(&unusedList, p->index_in_proc);
 }
 
 // Create a user page table for a given process,
@@ -358,12 +379,11 @@ userinit(void)
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
-
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-  add_proc_to_list(p->index_in_proc,cpus[0].lastRunnable);
+  add_proc_to_list(&(cpus[0].runnable), p->index_in_proc);
   release(&p->lock);
 }
 
@@ -435,7 +455,7 @@ fork(void)
   np->state = RUNNABLE;
 
   np->cpu_num = p->cpu_num;
-  add_proc_to_list(np->index_in_proc, &(mycpu()->lastRunnable));
+  add_proc_to_list(&(cpus[p->cpu_num].runnable), np->index_in_proc);
   release(&np->lock);
 
   return pid;
@@ -495,7 +515,7 @@ exit(int status)
   p->state = ZOMBIE;
   //q1-who is removing the proc from runnbale
   //q4 where and how we add p to the runnable list of the cpu
-  add_proc_to_list(myproc()->index_in_proc,lastZombie);
+  add_proc_to_list(&zombieList, myproc()->index_in_proc);
 
   release(&wait_lock);
 
@@ -570,16 +590,15 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-    p = mycpu()->firstRunnable;
+    p = &proc[mycpu()->runnable.first];
     acquire(&p->lock);
     // Switch to chosen process.  It is the process's job
     // to release its lock and then reacquire it
     // before jumping back to us.
     p->state = RUNNING;
     c->proc = p;
-    remove_proc_from_list(p->index_in_proc, &mycpu()->firstRunnable);
+    remove_proc_from_list(&(mycpu()->runnable), p->index_in_proc);
     swtch(&c->context, &p->context);
-    add_proc_to_list(p->index_in_proc, &mycpu()->lastRunnable);
     // Process is done running for now.
     // It should have changed its p->state before coming back.
     c->proc = 0;
@@ -626,7 +645,7 @@ yield(void)
   acquire(&p->lock);
   p->state = RUNNABLE;
   //q5 is this the place to add p the runnable list
-  add_proc_to_list(p->index_in_proc,&(cpus[p->cpu_num].lastRunnable));
+  add_proc_to_list(&(cpus[p->cpu_num].runnable), p->index_in_proc);
   sched();
   release(&p->lock);
 }
@@ -667,7 +686,7 @@ sleep(void *chan, struct spinlock *lk)
   // so it's okay to release lk.
 
   acquire(&p->lock);  //DOC: sleeplock1
-  add_proc_to_list(myproc()->index_in_proc,&lastSleeping);
+  add_proc_to_list(&sleepingList, myproc()->index_in_proc);
   release(lk);
 
   // Go to sleep.
@@ -699,8 +718,8 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
-        remove_proc_from_list(p->index_in_proc,&firstSleeping);
-        add_proc_to_list(p->index_in_proc,cpus[p->cpu_num].lastRunnable);
+        remove_proc_from_list(&sleepingList, p->index_in_proc);
+        add_proc_to_list(&cpus[p->cpu_num].runnable, p->index_in_proc);
       }
       release(&p->lock);
     }
@@ -722,9 +741,9 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
-        remove_proc_from_list(p->index_in_proc,&firstSleeping);
-        add_proc_to_list(p->index_in_proc,&(cpus[p->cpu_num].lastRunnable));
-              }
+        remove_proc_from_list(&sleepingList, p->index_in_proc);
+        add_proc_to_list(&(cpus[p->cpu_num].runnable), p->index_in_proc);
+      }
       release(&p->lock);
       return 0;
     }
