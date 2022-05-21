@@ -8,22 +8,6 @@
 #include "proc.h"
 
 uint64
-sys_setcpu(void)
-{
-  int n;
-  if(argint(0, &n) < 0)
-    return -1;
-  return setcpu(n);
-} 
-
-uint64
-sys_getcpu(void)
-{
-  return getcpu();
-}
-
-
-uint64
 sys_exit(void)
 {
   int n;
