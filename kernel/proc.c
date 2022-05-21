@@ -139,16 +139,16 @@ void remove_proc_from_list(list* l,int indexInProc){
     l->first = proc[indexInProc].next_index_in_list;
     proc[indexInProc].next_index_in_list = -1;
     printf("Releasing proc %d lock\n", l->first);
-    release(&proc[l->first].lock);
+    release(&proc[indexInProc].stateLock);
   }
   else// the list have at least two elements
   {
-    prev=l->first;
+    prev = l->first;
     //First is allready acquired
-    curr=proc[prev].next_index_in_list;
+    curr = proc[prev].next_index_in_list;
     printf("Acquiring proc %d lock\n", curr);
     acquire(&proc[curr].stateLock);
-    next=proc[curr].next_index_in_list;
+    next = proc[curr].next_index_in_list;
 
     while(indexInProc!=curr){
       printf("Releasing proc %d lock\n", prev);
@@ -307,7 +307,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  remove_proc_from_list(&unusedList,firstUnused);
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -477,7 +477,6 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -642,17 +641,18 @@ scheduler(void)
   int firstRunnable = -1;
   c->proc = 0;
   for(;;){
-    printf("intr_on\n");
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-
+    printf("Acquring \"%s\"\n", c->runnable.lock.name);
+    acquire(&c->runnable.lock);
     firstRunnable = c->runnable.first;
-    printf("First runnable is %d\n", firstRunnable);
     if(firstRunnable >= 0) {
       p = &proc[firstRunnable];
       printf("Acquring proc %d lock\n", p->index_in_proc);
       acquire(&p->lock);
+      printf("Releasing \"%s\"\n", c->runnable.lock.name);
+      release(&c->runnable.lock);
       // Switch to chosen process.  It is the process's job
       // to release its lock and then reacquire it
       // before jumping back to us.
@@ -667,6 +667,10 @@ scheduler(void)
       c->proc = 0;
       printf("Releasing proc %d lock\n", p->index_in_proc);
       release(&p->lock);
+    }
+    else{
+      printf("Releasing \"%s\"\n", c->runnable.lock.name);
+      release(&c->runnable.lock);
     }
     
   }
