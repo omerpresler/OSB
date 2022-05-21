@@ -22,7 +22,6 @@ struct context {
 typedef struct list{
 struct spinlock lock;
 int first;
-int last;
 }list;
 
 // Per-CPU state.
