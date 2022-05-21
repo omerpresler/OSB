@@ -94,36 +94,36 @@ void add_proc_to_list(list* l,int indexInProc){
 }
 
 void remove_proc_from_list(list* l,int indexInProc){
-  // printf("Removing proc %d from \"%s\"\n", indexInProc, l->lock.name);
+  printf("Removing proc %d from \"%s\"\n", indexInProc, l->lock.name);
   int prev=-1;
   int curr=-1;
   int next=-1;
 
-  // printf("Acquiring \"%s\"\n",l->lock.name);
+  printf("Acquiring \"%s\"\n",l->lock.name);
   acquire(&l->lock);
 
   //list size = 0
   if(l->first==-1)
   {
-    // printf("Releasing \"%s\"\n",l->lock.name);
+    printf("Releasing \"%s\"\n",l->lock.name);
     release(&l->lock);
     panic("trying to delete from an empty list");
   }
-  // printf("Releasing \"%s\"\n",l->lock.name);
+  printf("Releasing \"%s\"\n",l->lock.name);
   release(&l->lock);
 
-  // printf("Acquiring proc %d lock\n", l->first);
+  printf("Acquiring proc %d lock\n", l->first);
   acquire(&proc[l->first].stateLock);  
 
   if(l->first == l->last)// if the size of list = 1
   {
     if(l->first == indexInProc)//if the only element is the index to remove
     {
-      // printf("removing proc %d from list \"%s\" list.size=1 \n",indexInProc,l->lock.name);
+      printf("removing proc %d from list \"%s\" list.size=1 \n",indexInProc,l->lock.name);
       l->first = -1;
       l->last = -1;
       proc[indexInProc].next_index_in_list = -1;
-      // printf("Releasing proc %d lock\n", indexInProc);
+      printf("Releasing proc %d lock\n", indexInProc);
       release(&proc[indexInProc].stateLock);
       return; 
     }
@@ -135,25 +135,28 @@ void remove_proc_from_list(list* l,int indexInProc){
 
   else if(l->first == indexInProc)//trying to remove the first var when the size is bigger then 1
   {
-    // printf("removing proc %d from list \"%s\", this proc is the first var\n",indexInProc,l->lock.name);
-    l->first = proc[indexInProc].next_index_in_list;
-    proc[indexInProc].next_index_in_list = -1;
-    // printf("Releasing proc %d lock\n", l->first);
+    printf("removing proc %d from list \"%s\", this proc is the first var\n",indexInProc,l->lock.name);
     release(&proc[l->first].stateLock);
+    l->first = proc[indexInProc].next_index_in_list;
+    acquire(&proc[l->first].stateLock);  
+    proc[indexInProc].next_index_in_list = -1;
+    printf("Releasing proc %d lock\n", l->first);
+    release(&proc[l->first].stateLock);
+    return;
   }
   else// the list have at least two elements
   {
     prev=l->first;
-    //First is allready acquired
+    
     curr=proc[prev].next_index_in_list;
-    // printf("Acquiring proc %d lock\n", curr);
+    printf("Acquiring proc %d lock\n", curr);
     acquire(&proc[curr].stateLock);
     next=proc[curr].next_index_in_list;
 
     while(indexInProc!=curr){
-      // printf("Releasing proc %d lock\n", prev);
+      printf("Releasing proc %d lock\n", prev);
       release(&proc[prev].stateLock);
-      // printf("Acquiring proc %d lock\n", next);
+      printf("Acquiring proc %d lock\n", next);
       acquire(&proc[next].stateLock);
 
       prev = curr;
@@ -285,31 +288,32 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-  // printf("Acquiring \"%s\"\n", unusedList.lock.name);
+  printf("Acquiring \"%s\"\n", unusedList.lock.name);
   acquire(&unusedList.lock);
   int firstUnused = unusedList.first;
   if(firstUnused >= 0)
   { 
-    // printf("Releasing \"%s\"\n", unusedList.lock.name);
+    printf("Releasing \"%s\"\n", unusedList.lock.name);
     p = &proc[firstUnused];
     acquire(&p->lock);
     release(&unusedList.lock);
-    // printf("Acquiring proc %d lock\n", p->index_in_proc);
+    printf("Acquiring proc %d lock\n", p->index_in_proc);
     goto found;
   }
-  // printf("Releasing \"%s\"\n", unusedList.lock.name);
+  printf("Releasing \"%s\"\n", unusedList.lock.name);
   release(&unusedList.lock);
   return 0;
 
 found:
+  printf("alloctiong pid for proc p %d",p->index_in_proc);
   p->pid = allocpid();
+  printf("finshed alloctiong pin for proc p %d",p->index_in_proc);
   remove_proc_from_list(&unusedList,firstUnused);
   p->state = USED;
-
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
-    // printf("Releasing proc %d lock\n", p->index_in_proc);
+    printf("Releasing proc %d lock\n", p->index_in_proc);
     release(&p->lock);
     return 0;
   }
@@ -422,9 +426,9 @@ userinit(void)
   struct proc *p;
   // printf("Entering userinit\n");
 
-  // printf("Allocating first user process\n");
+  printf("Allocating first user process\n");
   p = allocproc();
-  // printf("initproc allocated successfully\n");
+  printf("initproc allocated successfully\n");
   initproc = p;
   
   // allocate one user page and copy init's instructions
@@ -665,7 +669,7 @@ scheduler(void)
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
-      printf("Releasing proc %d lock\n", p->index_in_proc);
+      printf("Releasing proc %d real lock\n", p->index_in_proc);
       release(&p->lock);
     }else
       release(&c->runnable.lock);
