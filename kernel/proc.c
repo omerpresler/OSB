@@ -44,14 +44,14 @@ int getcpu( )
 
 
 void add_proc_to_list(list* l,int indexInProc){
-  printf("Adding proc %d to \"%s\"\n", indexInProc, l->lock.name);
-  printf("Acquiring \"%s\"\n",l->lock.name);
+  // printf("Adding proc %d to \"%s\"\n", indexInProc, l->lock.name);
+  // printf("Acquiring \"%s\"\n",l->lock.name);
   acquire(&l->lock);
   //list size = 0
   if(l->first==-1)
   {
-    printf("list \"%s\" is empty\n",l->lock.name);
-    printf("Acquiring proc %d\n",indexInProc);
+    // printf("list \"%s\" is empty\n",l->lock.name);
+    // printf("Acquiring proc %d\n",indexInProc);
     acquire(&proc[indexInProc].stateLock);
 
     struct proc* toAdd=&proc[indexInProc];
@@ -61,22 +61,22 @@ void add_proc_to_list(list* l,int indexInProc){
     toAdd->next_index_in_list = -1;
 
 
-    printf("Releasing \"%s\"\n",l->lock.name);
+    // printf("Releasing \"%s\"\n",l->lock.name);
     release(&l->lock);
-    printf("Releasing proc %d\n",indexInProc);
+    // printf("Releasing proc %d\n",indexInProc);
     release(&proc[indexInProc].stateLock);
     
   }
   else
   {
-    printf("Releasing \"%s\"\n",l->lock.name);
+    // printf("Releasing \"%s\"\n",l->lock.name);
     release(&l->lock);
 
-    printf("list \"%s\" is not empty\n", l->lock.name);
+    // printf("list \"%s\" is not empty\n", l->lock.name);
 
-    printf("Acquiring the last proc of \"%s\"\n",l->lock.name);
+    // printf("Acquiring the last proc of \"%s\"\n",l->lock.name);
     acquire(&proc[l->last].stateLock);
-    printf("Acquiring proc %d lock\n", indexInProc);
+    // printf("Acquiring proc %d lock\n", indexInProc);
     acquire(&proc[indexInProc].stateLock);
 
     struct proc* last=&proc[l->last];
@@ -86,44 +86,44 @@ void add_proc_to_list(list* l,int indexInProc){
     toAdd->next_index_in_list = -1;
     l->last = toAdd->index_in_proc;
 
-    printf("Releasing the last proc of \"%s\"\n",l->lock.name);
+    // printf("Releasing the last proc of \"%s\"\n",l->lock.name);
     release(&last->stateLock);
-    printf("Releasing proc %d lock\n", indexInProc);
+    // printf("Releasing proc %d lock\n", indexInProc);
     release(&proc[indexInProc].stateLock);
   }
 }
 
 void remove_proc_from_list(list* l,int indexInProc){
-  printf("Removing proc %d from \"%s\"\n", indexInProc, l->lock.name);
+  // printf("Removing proc %d from \"%s\"\n", indexInProc, l->lock.name);
   int prev=-1;
   int curr=-1;
   int next=-1;
 
-  printf("Acquiring \"%s\"\n",l->lock.name);
+  // printf("Acquiring \"%s\"\n",l->lock.name);
   acquire(&l->lock);
 
   //list size = 0
   if(l->first==-1)
   {
-    printf("Releasing \"%s\"\n",l->lock.name);
+    // printf("Releasing \"%s\"\n",l->lock.name);
     release(&l->lock);
     panic("trying to delete from an empty list");
   }
-  printf("Releasing \"%s\"\n",l->lock.name);
+  // printf("Releasing \"%s\"\n",l->lock.name);
   release(&l->lock);
 
-  printf("Acquiring proc %d lock\n", l->first);
+  // printf("Acquiring proc %d lock\n", l->first);
   acquire(&proc[l->first].stateLock);  
 
   if(l->first == l->last)// if the size of list = 1
   {
     if(l->first == indexInProc)//if the only element is the index to remove
     {
-      printf("removing proc %d from list \"%s\" list.size=1 \n",indexInProc,l->lock.name);
+      // printf("removing proc %d from list \"%s\" list.size=1 \n",indexInProc,l->lock.name);
       l->first = -1;
       l->last = -1;
       proc[indexInProc].next_index_in_list = -1;
-      printf("Releasing proc %d lock\n", indexInProc);
+      // printf("Releasing proc %d lock\n", indexInProc);
       release(&proc[indexInProc].stateLock);
       return; 
     }
@@ -135,25 +135,25 @@ void remove_proc_from_list(list* l,int indexInProc){
 
   else if(l->first == indexInProc)//trying to remove the first var when the size is bigger then 1
   {
-    printf("removing proc %d from list \"%s\", this proc is the first var\n",indexInProc,l->lock.name);
+    // printf("removing proc %d from list \"%s\", this proc is the first var\n",indexInProc,l->lock.name);
     l->first = proc[indexInProc].next_index_in_list;
     proc[indexInProc].next_index_in_list = -1;
-    printf("Releasing proc %d lock\n", l->first);
-    release(&proc[l->first].lock);
+    // printf("Releasing proc %d lock\n", l->first);
+    release(&proc[l->first].stateLock);
   }
   else// the list have at least two elements
   {
     prev=l->first;
     //First is allready acquired
     curr=proc[prev].next_index_in_list;
-    printf("Acquiring proc %d lock\n", curr);
+    // printf("Acquiring proc %d lock\n", curr);
     acquire(&proc[curr].stateLock);
     next=proc[curr].next_index_in_list;
 
     while(indexInProc!=curr){
-      printf("Releasing proc %d lock\n", prev);
+      // printf("Releasing proc %d lock\n", prev);
       release(&proc[prev].stateLock);
-      printf("Acquiring proc %d lock\n", next);
+      // printf("Acquiring proc %d lock\n", next);
       acquire(&proc[next].stateLock);
 
       prev = curr;
@@ -167,9 +167,9 @@ void remove_proc_from_list(list* l,int indexInProc){
     proc[prev].next_index_in_list = next;
     proc[indexInProc].next_index_in_list = -1;
 
-    printf("Releasing proc %d lock\n", curr);
+    // printf("Releasing proc %d lock\n", curr);
     release(&proc[curr].stateLock);
-    printf("Releasing proc %d lock\n", prev);
+    // printf("Releasing proc %d lock\n", prev);
     release(&proc[prev].stateLock);
   }
 }
@@ -191,7 +191,7 @@ proc_mapstacks(pagetable_t kpgtbl) {
 }
 
 void initlists(){
-  printf("Initlists\n");
+  // printf("Initlists\n");
   unusedList.first=-1;
   unusedList.last=-1;
   initlock(&unusedList.lock,"unused list lock");
@@ -204,14 +204,11 @@ void initlists(){
   sleepingList.last=-1;
   initlock(&sleepingList.lock,"sleeping list lock");
 
-  char name[11] = "CPU lock ";
   for(int i=0;i<NCPU;i++){
     cpus[i].runnable.first=-1;
     cpus[i].runnable.last=-1;
 
-    name[9] = i+48;
-    name[10] = '\0';
-    initlock(&cpus[i].runnable.lock, name);
+    initlock(&cpus[i].runnable.lock, "cpu lock");
   }
 
 }
@@ -225,15 +222,15 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   int index = 0;
-  printf("initializing the proc table\n\n");
+  // printf("initializing the proc table\n\n");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
       p->cpu_num = 0;
       p->index_in_proc = index;
-      printf("Adding proc %d to the unused list\n", index);
+      // printf("Adding proc %d to the unused list\n", index);
       add_proc_to_list(&unusedList, p->index_in_proc);
-      printf("proc %d was added to unused list\n\n", index);
+      // printf("proc %d was added to unused list\n\n", index);
       index++;
   }
 }
@@ -270,11 +267,11 @@ myproc(void) {
 int
 allocpid() {
   int pid;
-  printf("Acquiring pid lock\n");
+  // printf("Acquiring pid lock\n");
   acquire(&pid_lock);
   pid = nextpid;
   nextpid = nextpid + 1;
-  printf("Releasing pid lock\n");
+  // printf("Releasing pid lock\n");
   release(&pid_lock);
 
   return pid;
@@ -288,39 +285,42 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-  printf("Acquiring \"%s\"\n", unusedList.lock.name);
+  // printf("Acquiring \"%s\"\n", unusedList.lock.name);
   acquire(&unusedList.lock);
   int firstUnused = unusedList.first;
   if(firstUnused >= 0)
   { 
-    printf("Releasing \"%s\"\n", unusedList.lock.name);
-    release(&unusedList.lock);
+    // printf("Releasing \"%s\"\n", unusedList.lock.name);
     p = &proc[firstUnused];
-    printf("Acquiring proc %d lock\n", p->index_in_proc);
     acquire(&p->lock);
+    release(&unusedList.lock);
+    // printf("Acquiring proc %d lock\n", p->index_in_proc);
     goto found;
   }
-  printf("Releasing \"%s\"\n", unusedList.lock.name);
+  // printf("Releasing \"%s\"\n", unusedList.lock.name);
   release(&unusedList.lock);
   return 0;
 
 found:
   p->pid = allocpid();
+  remove_proc_from_list(&unusedList,firstUnused);
   p->state = USED;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
-    printf("Releasing proc %d lock\n", p->index_in_proc);
+    // printf("Releasing proc %d lock\n", p->index_in_proc);
     release(&p->lock);
     return 0;
   }
 
   // An empty user page table.
+  printf("getttin into allocpage table of pron num %d",p->index_in_proc);
   p->pagetable = proc_pagetable(p);
+  printf("page table is empty %d",p->pagetable==0);
   if(p->pagetable == 0){
     freeproc(p);
-    printf("Releasing proc %d lock\n", p->index_in_proc);
+    // printf("Releasing proc %d lock\n", p->index_in_proc);
     release(&p->lock);
     return 0;
   }
@@ -339,7 +339,7 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  printf("Entering freeproc\n");
+  // printf("Entering freeproc\n");
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -367,8 +367,10 @@ proc_pagetable(struct proc *p)
 
   // An empty page table.
   pagetable = uvmcreate();
-  if(pagetable == 0)
+  if(pagetable == 0){
+    printf("page table is empty of proc num %d",p->index_in_proc);
     return 0;
+  }
 
   // map the trampoline code (for system call return)
   // at the highest user virtual address.
@@ -418,11 +420,11 @@ void
 userinit(void)
 {
   struct proc *p;
-  printf("Entering userinit\n");
+  // printf("Entering userinit\n");
 
-  printf("Allocating first user process\n");
+  // printf("Allocating first user process\n");
   p = allocproc();
-  printf("initproc allocated successfully\n");
+  // printf("initproc allocated successfully\n");
   initproc = p;
   
   // allocate one user page and copy init's instructions
@@ -441,7 +443,7 @@ userinit(void)
   add_proc_to_list(&cpus[0].runnable, p->index_in_proc);
 
   release(&p->lock);
-  printf("Exiting userinit\n\n");
+  // printf("Exiting userinit\n\n");
 }
 
 // Grow or shrink user memory by n bytes.
@@ -472,12 +474,11 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
-
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
-
+  printf("forking from %d to child num %d",p->index_in_proc,np->index_in_proc);
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -522,7 +523,7 @@ void
 reparent(struct proc *p)
 {
   struct proc *pp;
-  printf("Entering Reparent\n");
+  // printf("Entering Reparent\n");
   for(pp = proc; pp < &proc[NPROC]; pp++){
     if(pp->parent == p){
       pp->parent = initproc;
@@ -538,7 +539,7 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
-  printf("Entring exit function\n");
+  // printf("Entring exit function\n");
 
   if(p == initproc)
     panic("init exiting");
@@ -636,29 +637,28 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  printf("Entered scheduler\n");
+  // printf("Entered scheduler\n");
   struct proc *p;
   struct cpu *c = mycpu();
   int firstRunnable = -1;
   c->proc = 0;
   for(;;){
-    printf("intr_on\n");
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
-
+    acquire(&c->runnable.lock);
     firstRunnable = c->runnable.first;
-    printf("First runnable is %d\n", firstRunnable);
     if(firstRunnable >= 0) {
+      printf("First runnable is %d\n", firstRunnable);
       p = &proc[firstRunnable];
-      printf("Acquring proc %d lock\n", p->index_in_proc);
       acquire(&p->lock);
+      release(&c->runnable.lock);
+      printf("Acquring proc %d lock\n", p->index_in_proc);
       // Switch to chosen process.  It is the process's job
       // to release its lock and then reacquire it
       // before jumping back to us.
       p->state = RUNNING;
       c->proc = p;
-      printf("cpu: %d\n", cpuid());
+      // printf("cpu: %d\n", cpuid());
       remove_proc_from_list(&(c->runnable), p->index_in_proc);
       swtch(&c->context, &p->context);
 
@@ -667,8 +667,8 @@ scheduler(void)
       c->proc = 0;
       printf("Releasing proc %d lock\n", p->index_in_proc);
       release(&p->lock);
-    }
-    
+    }else
+      release(&c->runnable.lock);
   }
 }
 
@@ -770,17 +770,17 @@ void
 wakeup(void *chan)
 {
   struct proc *p;
-  printf("Entering wakeup\n");
+  // printf("Entering wakeup\n");
   for(p = proc; p < &proc[NPROC]; p++) {
     if(p != myproc()){
-      printf("Acquiring proc %d lock\n", p->index_in_proc);
+      // printf("Acquiring proc %d lock\n", p->index_in_proc);
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
         remove_proc_from_list(&sleepingList, p->index_in_proc);
         add_proc_to_list(&cpus[0].runnable, p->index_in_proc);
       }
-      printf("Releasing proc %d lock\n", p->index_in_proc);
+      // printf("Releasing proc %d lock\n", p->index_in_proc);
       release(&p->lock);
     }
   }

@@ -1,0 +1,102 @@
+void add_proc_to_list(list* l,int indexInProc){
+  printf("adding proc %d to list %s \n",indexInProc,l->lock.name);
+  //list size = 0
+  acquire(&l->lock);
+  if(l->first==-1)
+  {
+    printf("size of list %s when adding proc %d is zero",l->lock.name,indexInProc);
+    acquire(&proc[indexInProc].stateLock);
+    struct proc* toAdd=&proc[indexInProc];
+
+    l->first = indexInProc;
+    l->last = indexInProc;
+    toAdd->next_index_in_list = -1;
+
+    release(&proc[indexInProc].stateLock);
+  }
+  release(&l->lock);
+  else
+  {
+    printf("size of list %s when adding proc %d is not zero",l->lock.name,indexInProc);
+    acquire(&proc[l->last].stateLock);
+    printf("aqcuired list last lock in add proc\n");
+    acquire(&proc[indexInProc].stateLock);
+    printf("aqcuired indexinproc lock in add proc\n");
+    struct proc* last=&proc[l->last];
+    struct proc* toAdd=&proc[indexInProc];
+
+    last->next_index_in_list = indexInProc;
+    toAdd->next_index_in_list = -1;
+    l->last = toAdd->index_in_proc;
+
+    release(&last->stateLock);
+    release(&proc[indexInProc].stateLock);
+  }
+}
+
+void remove_proc_from_list(list* l,int indexInProc){
+
+  int prev=-1;
+  int curr=-1;
+  int next=-1;
+  acquire(&l->lock);
+  printf("aqquired list lock in remove proc %d from list %s \n",indexInProc,l->lock.name);
+  //list size = 0
+  if(l->first==-1)
+  {
+    panic("trying to delete from an empty list \n");
+  }
+
+  else if(l->first == l->last)// if the size of list = 1
+  {
+    if(l->first == indexInProc)//if the only element is the index to remove
+    {
+      printf("removing proc %d from list %s list.size=1 \n",indexInProc,l->lock.name);
+      l->first = -1;
+      l->last = -1;
+      proc[indexInProc].next_index_in_list = -1;
+      release(&l->lock);
+    }
+    else
+    {
+      panic("The element does't exist in this list");
+    }
+  }
+
+  else if(l->first == indexInProc)//trying to remove the first var when the size is bigger then 1
+  {
+    printf("a");
+    acquire(&proc[indexInProc].stateLock);
+    l->first = proc[indexInProc].next_index_in_list;
+    proc[indexInProc].next_index_in_list = -1;
+    release(&proc[indexInProc].stateLock);
+    release(&l->lock);
+  }
+
+  else// the list have at least two elements
+  {
+    prev=l->first;
+    acquire(&proc[prev].stateLock);
+    curr=proc[prev].next_index_in_list;
+    acquire(&proc[curr].stateLock);
+    next=proc[curr].next_index_in_list;
+
+    while(indexInProc!=curr){
+      release(&proc[prev].stateLock);
+      acquire(&proc[next].stateLock);
+
+      prev = curr;
+      curr = next;
+      next = proc[next].next_index_in_list;
+
+      if(curr == -1)
+        panic("The element does't exist in this list");
+    }
+    
+    proc[prev].next_index_in_list = next;
+    proc[indexInProc].next_index_in_list = -1;
+    release(&proc[prev].stateLock);
+    release(&proc[curr].stateLock);
+    release(&l->lock);
+  }
+}
