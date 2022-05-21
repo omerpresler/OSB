@@ -42,6 +42,21 @@ int getcpu( )
   return myproc()->cpu_num;
 }
 
+int cpu_process_count(int cpunum)
+{
+  return cpus[cpunum].procCount;
+}
+
+int leastUsedCpu()
+{
+  int min = NPROC;
+  for (int i = 0; i < NCPU; i++)
+    if(min > cpus[i].procCount)
+      min = cpus[i].procCount;
+  
+  return min;
+}
+
 
 void add_proc_to_list(list* l,int indexInProc){
   acquire(&l->lock);
@@ -167,6 +182,7 @@ void initlists(){
 
   for(int i=0;i<NCPU;i++){
     cpus[i].runnable.first=-1;
+    cpus[i].procCount = 0;
     initlock(&cpus[i].runnable.lock, "cpu runnable lock");
   }
 
@@ -472,7 +488,16 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
-  add_proc_to_list(&cpus[p->cpu_num].runnable, np->index_in_proc);
+  if(BLNCFLG)
+  {
+    int newCpu = leastUsedCpu();
+    np->cpu_num = newCpu;
+    do{}while(cas(&cpus[newCpu].procCount, cpus[newCpu].procCount, cpus[newCpu].procCount+1));
+    add_proc_to_list(&cpus[newCpu].runnable, np->index_in_proc);
+  }
+  else
+    add_proc_to_list(&cpus[p->cpu_num].runnable, np->index_in_proc);
+  
   release(&np->lock);
  
   return pid;
@@ -747,7 +772,15 @@ wakeup(void *chan)
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
         remove_proc_from_list(&sleepingList, p->index_in_proc);
-        add_proc_to_list(&cpus[0].runnable, p->index_in_proc);
+        if(BLNCFLG)
+        {
+          int newCpu = leastUsedCpu();
+          do{}while(cas(&cpus[newCpu].procCount, cpus[newCpu].procCount, cpus[newCpu].procCount+1));
+          p->cpu_num = newCpu;
+          add_proc_to_list(&cpus[newCpu].runnable, p->index_in_proc);
+        }
+        else
+          add_proc_to_list(&cpus[0].runnable, p->index_in_proc);
       }
       ////printf("Releasing proc %d lock\n", p->index_in_proc);
       release(&p->lock);
@@ -770,7 +803,9 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
+        remove_proc_from_list(&sleepingList, p->index_in_proc);
         p->state = RUNNABLE;
+        add_proc_to_list(&cpus[p->cpu_num].runnable, p->index_in_proc);
       }
       release(&p->lock);
       return 0;

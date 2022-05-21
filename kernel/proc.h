@@ -31,6 +31,7 @@ struct cpu {
   int noff;                   // Depth of push_off() nesting.
   int intena;  
   list runnable;              // Were interrupts enabled before push_off()?
+  uint64 procCount;
 };
 
 extern struct cpu cpus[NCPU];
